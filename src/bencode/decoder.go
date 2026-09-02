@@ -79,7 +79,40 @@ func decoder(input string, position int) (any, int, error) {
 		}
 
 		return ans, nPosition + 1, nil
-	case input[position] == "d":
+	case input[position] == 'd':
+		myMap := make(map[string]any)
+		nPosition := position + 1
+
+		for nPosition < inputLength && input[nPosition] != 'e' {
+			key, tPosition, err := decoder(input, nPosition)
+
+			if err != nil {
+				return nil, position, fmt.Errorf("malformed output")
+			}
+
+			value, rPosition, err := decoder(input, tPosition)
+
+			if err != nil { 
+				return nil, position, fmt.Errorf("malformed output")
+			} 
+
+			nPosition = rPosition
+			keyString, ok := key.(string)
+			if !ok {
+				return nil, position, fmt.Errorf("dictionary key must be a string")
+			}
+			myMap[keyString] = value
+		}
+
+		if nPosition >= inputLength {
+			return nil, position, fmt.Errorf("out of bounds")
+		}
+		if input[nPosition] != 'e' {
+			return nil, position, fmt.Errorf("malformed output")
+		}
+
+
+		return myMap, nPosition + 1, nil
 
 	default:
 		return nil, position, fmt.Errorf("unsupported bencode type at position %d", position)
