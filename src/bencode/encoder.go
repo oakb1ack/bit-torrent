@@ -2,6 +2,7 @@ package bencode
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 )
  
@@ -31,11 +32,30 @@ func encoder(data any) (string, error) {
 	case map[string]any:
 		ans += "d"
 
-		v_list = []string
-		for key, _ in v{
+		v_list := []string{}
+		for key := range v{
 			v_list = append(v_list, key)
 		}
-		sort.String(v_list)
+		sort.Strings(v_list)
+
+		for _, x := range v_list{
+			tans, err := encoder(x)
+
+			if err != nil {
+				return "", fmt.Errorf("failed to encode key dict element")
+			}
+
+			lans, err := encoder(v[x])
+
+			if err != nil {
+				return "", fmt.Errorf("failed to encode value dict element")
+			}
+
+			ans += tans + lans
+		}
+
+		return ans + "e", nil
+
 	default:
 		return "", fmt.Errorf("unsupported type")
 	}
