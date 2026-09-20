@@ -118,3 +118,8 @@ func decoder(input string, position int) (any, int, error) {
 		return nil, position, fmt.Errorf("unsupported bencode type at position %d", position)
 	}
 }
+
+func Decode(input string) (any, error) {
+	value, _, err := decoder(input, 0)
+	return value, err
+}
