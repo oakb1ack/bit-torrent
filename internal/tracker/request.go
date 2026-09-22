@@ -7,7 +7,7 @@ import (
 	"strconv"
 )
 
-type parameters struct {
+type Parameters struct {
 	infoHash   [20]byte
 	peerID     [20]byte
 	port       int
@@ -17,7 +17,7 @@ type parameters struct {
 	compact    int
 }
 
-func requestPeers(link string, params parameters) (*http.Response, error) {
+func RequestPeers(link string, params Parameters) (*http.Response, error) {
 	u, err := url.Parse(link)
 	if err != nil {
 		return nil, err
