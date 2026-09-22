@@ -28,8 +28,8 @@ func requestPeers(link string, params parameters) (*http.Response, error) {
 	query.Set("info_hash", string(params.infoHash[:]))
 	query.Set("peer_id", string(params.peerID[:]))
 	query.Set("port", strconv.Itoa(params.port))
-	query.Set("uploaded", strconv.Itoa(params.downloaded))
-	query.Set("downloaded", strconv.Itoa(params.uploaded))
+	query.Set("uploaded", strconv.Itoa(params.uploaded))
+	query.Set("downloaded", strconv.Itoa(params.downloaded))
 	query.Set("left", strconv.Itoa(params.left))
 	query.Set("compact", strconv.Itoa(params.compact))
 
