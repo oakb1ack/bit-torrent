@@ -12,10 +12,10 @@ type Parameters struct {
 	infoHash   [20]byte
 	peerID     [20]byte
 	port       int
-	uploaded   int
-	downloaded int
-	left       int
-	compact    int
+	uploaded   int64
+	downloaded int64
+	left       int64
+	compact    int32
 }
 
 func RequestPeers(link string, params Parameters) (*http.Response, error) {
