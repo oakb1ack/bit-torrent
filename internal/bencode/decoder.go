@@ -16,7 +16,7 @@ func decoder(input string, position int) (any, int, error) {
 	case input[position] == 'i':
 		nPosition := position + 1
 
-		for nPosition < inputLength && input[nPosition] != 'e'  {
+		for nPosition < inputLength && input[nPosition] != 'e' {
 			nPosition += 1
 		}
 
@@ -24,14 +24,14 @@ func decoder(input string, position int) (any, int, error) {
 			return nil, position, fmt.Errorf("incorrct input")
 		}
 
-		number, err := strconv.Atoi(input[position + 1 : nPosition])
+		number, err := strconv.Atoi(input[position+1 : nPosition])
 
 		if err != nil {
 			return nil, position, fmt.Errorf("malformed output")
 		}
 
 		return number, nPosition + 1, nil
-	
+
 	case input[position] >= '0' && input[position] <= '9':
 		nPosition := position
 
@@ -51,11 +51,11 @@ func decoder(input string, position int) (any, int, error) {
 		if err != nil {
 			return nil, nPosition, fmt.Errorf("malformed output")
 		}
-		if nPosition + 1 + num > inputLength {
+		if nPosition+1+num > inputLength {
 			return nil, position, fmt.Errorf("string length exceeds input")
 		}
 
-		return input[nPosition + 1: nPosition + 1 + num], nPosition + num + 1, nil
+		return input[nPosition+1 : nPosition+1+num], nPosition + num + 1, nil
 	case input[position] == 'l':
 		nPosition := position + 1
 		ans := []any{}
@@ -92,9 +92,9 @@ func decoder(input string, position int) (any, int, error) {
 
 			value, rPosition, err := decoder(input, tPosition)
 
-			if err != nil { 
+			if err != nil {
 				return nil, position, fmt.Errorf("malformed output")
-			} 
+			}
 
 			nPosition = rPosition
 			keyString, ok := key.(string)
@@ -110,7 +110,6 @@ func decoder(input string, position int) (any, int, error) {
 		if input[nPosition] != 'e' {
 			return nil, position, fmt.Errorf("malformed output")
 		}
-
 
 		return myMap, nPosition + 1, nil
 

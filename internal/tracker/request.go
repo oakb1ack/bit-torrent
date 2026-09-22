@@ -9,13 +9,13 @@ import (
 )
 
 type Parameters struct {
-	infoHash   [20]byte
-	peerID     [20]byte
-	port       int
-	uploaded   int64
-	downloaded int64
-	left       int64
-	compact    int32
+	InfoHash   [20]byte
+	PeerID     [20]byte
+	Port       int
+	Uploaded   int64
+	Downloaded int64
+	Left       int64
+	Compact    int32
 }
 
 func RequestPeers(link string, params Parameters) (*http.Response, error) {
@@ -25,14 +25,14 @@ func RequestPeers(link string, params Parameters) (*http.Response, error) {
 	}
 
 	query := u.Query()
-	
-	query.Set("info_hash", string(params.infoHash[:]))
-	query.Set("peer_id", string(params.peerID[:]))
-	query.Set("port", strconv.Itoa(params.port))
-	query.Set("uploaded", strconv.Itoa(params.uploaded))
-	query.Set("downloaded", strconv.Itoa(params.downloaded))
-	query.Set("left", strconv.Itoa(params.left))
-	query.Set("compact", strconv.Itoa(params.compact))
+
+	query.Set("info_hash", string(params.InfoHash[:]))
+	query.Set("peer_id", string(params.PeerID[:]))
+	query.Set("port", strconv.Itoa(params.Port))
+	query.Set("uploaded", strconv.FormatInt(params.Uploaded, 10))
+	query.Set("downloaded", strconv.FormatInt(params.Downloaded, 10))
+	query.Set("left", strconv.FormatInt(params.Left, 10))
+	query.Set("compact", strconv.FormatInt(int64(params.Compact), 10))
 
 	u.RawQuery = query.Encode()
 
@@ -42,7 +42,7 @@ func RequestPeers(link string, params Parameters) (*http.Response, error) {
 	}
 
 	fmt.Println(req.URL.String())
-	client := &http.Client{ 
+	client := &http.Client{
 		Timeout: 15 * time.Second,
 	}
 

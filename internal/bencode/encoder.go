@@ -5,9 +5,9 @@ import (
 	"sort"
 	"strconv"
 )
- 
+
 func encoder(data any) (string, error) {
-	var ans string = "" 
+	var ans string = ""
 
 	switch v := data.(type) {
 	case int:
@@ -33,12 +33,12 @@ func encoder(data any) (string, error) {
 		ans += "d"
 
 		v_list := []string{}
-		for key := range v{
+		for key := range v {
 			v_list = append(v_list, key)
 		}
 		sort.Strings(v_list)
 
-		for _, x := range v_list{
+		for _, x := range v_list {
 			tans, err := encoder(x)
 
 			if err != nil {
