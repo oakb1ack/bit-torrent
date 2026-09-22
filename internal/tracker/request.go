@@ -25,7 +25,7 @@ func buildRequest(link string, params parameters) (*http.Response, error) {
 
 	query := u.Query()
 	
-	query.Set("into_hash", string(params.infoHash[:]))
+	query.Set("info_hash", string(params.infoHash[:]))
 	query.Set("peer_id", string(params.peerID[:]))
 	query.Set("port", strconv.Itoa(params.port))
 	query.Set("uploaded", strconv.Itoa(params.downloaded))
