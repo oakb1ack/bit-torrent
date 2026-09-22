@@ -17,7 +17,7 @@ type parameters struct {
 	compact    int
 }
 
-func buildRequest(link string, params parameters) (*http.Response, error) {
+func requestPeers(link string, params parameters) (*http.Response, error) {
 	u, err := url.Parse(link)
 	if err != nil {
 		return nil, err
