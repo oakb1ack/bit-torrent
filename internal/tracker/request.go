@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 )
 
 type Parameters struct {
@@ -41,7 +42,9 @@ func RequestPeers(link string, params Parameters) (*http.Response, error) {
 	}
 
 	fmt.Println(req.URL.String())
-	client := &http.Client{}
+	client := &http.Client{ 
+		Timeout: 15 * time.Second,
+	}
 
 	return client.Do(req)
 }
