@@ -1,9 +1,13 @@
 package tracker
 
 import (
+	"encoding/binary"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
-	"net/url"
+
+	"github.com/oakb1ack/bit-torrent/internal/bencode"
 )
 
 type Peer struct {
@@ -28,27 +32,28 @@ func DecodePeers(resp *http.Response) ([]Peer, error) {
 		return nil, err
 	}
 
-	decoded, err := Decode(string(bodyBytes))
+	decoded, err := bencode.Decode(string(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
 
-	dict, err := decoded.(map[string]any)
-	if err != nil {
-		return nil, err
+	dict, ok := decoded.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("tracker response is not a dictionary")
 	}
 
-	rawPeers, err := dict["peers"].([]byte)
-	if err != nil {
-		return nil, err
+	peersValue, ok := dict["peers"].(string)
+	if !ok {
+		return nil, fmt.Errorf("tracker response does not contain a valid peers string")
 	}
+	rawPeers := []byte(peersValue)
 
 	if len(rawPeers)%6 != 0 {
 		return nil, fmt.Errorf("Length of rawPeers not divisible by 6")
 	}
 
-	peers = make([]peer, 0, len(rawPeers)/6)
-	for i := 0; i < len(rawPeers); i+=6 {
+	peers := make([]Peer, 0, len(rawPeers)/6)
+	for i := 0; i < len(rawPeers); i += 6 {
 		ip := net.IP(rawPeers[i : i+4])
 		port := binary.BigEndian.Uint16(rawPeers[i+4 : i + 6])
 		peers = append(peers, Peer{IP: ip, Port: port})
