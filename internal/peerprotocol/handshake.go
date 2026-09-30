@@ -4,6 +4,8 @@ import(
 	"fmt"
 )
 
+const bitTorrentProtocol = "BitTorrent protocol"
+
 type Handshake struct {
 	ProtocolStringLength byte
 	ProtocolString       string
@@ -15,6 +17,10 @@ type Handshake struct {
 
 func EncodeHandshake(handshake Handshake) ([]byte, error) {
 	var ans []byte
+
+	if handshake.ProtocolString != bitTorrentProtocol {
+		return nil, fmt.Errorf("unsupported protocol string")
+	}
 
 	if len(handshake.ProtocolString) > 255 ||  byte(len(handshake.ProtocolString)) != handshake.ProtocolStringLength{
 		return nil, fmt.Errorf("protocol string length not properly encoded")
@@ -41,6 +47,29 @@ func EncodeHandshake(handshake Handshake) ([]byte, error) {
 	return ans, nil
 }
 
-func DecodeHandshake(handshake []byte) (Handshake, error) {
+func DecodeHandshake(ans []byte) (Handshake, error) {
+	
+	var handshake Handshake
 
+	if len(ans) == 0 {
+		return handshake, fmt.Errorf("no valid input was detected")
+	}
+	
+	handshake.ProtocolStringLength = ans[0]
+
+	if len(ans) != int(handshake.ProtocolStringLength) + 49 {
+		return handshake, fmt.Errorf("input length invalid")
+	} 
+	
+	var endOfString int = int(handshake.ProtocolStringLength) + 1
+
+	handshake.ProtocolString = string(ans[1:endOfString])
+	if handshake.ProtocolString != bitTorrentProtocol {
+		return handshake, fmt.Errorf("unsupported protocol string")
+	}
+	copy(handshake.Reserved[:], ans[endOfString: endOfString + 8])
+	copy(handshake.InfoHash[:], ans[endOfString+8: endOfString + 28])
+	copy(handshake.PeerID[:], ans[endOfString+28: endOfString + 48])
+
+	return handshake, nil
 }
