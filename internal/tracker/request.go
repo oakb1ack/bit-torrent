@@ -1,7 +1,6 @@
 package tracker
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -41,7 +40,6 @@ func RequestPeers(link string, params Parameters) (*http.Response, error) {
 		return nil, err
 	}
 
-	fmt.Println(req.URL.String())
 	client := &http.Client{
 		Timeout: 15 * time.Second,
 	}
