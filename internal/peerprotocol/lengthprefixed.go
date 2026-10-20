@@ -22,8 +22,8 @@ func EncodeLengthPrefixed(lengthPrefixed LengthPrefixed) ([]byte, error) {
 
 	ans = append(ans, lengthPrefixed.MessageID)
 
-	if n != uint32(len(lengthPrefixed.Payload))+1 {
-		return nil, fmt.Errorf("Payload length does not match message size")
+	if uint64(n) != uint64(len(lengthPrefixed.Payload))+1 {
+		return nil, fmt.Errorf("payload length does not match message size")
 	}
 
 	for _, value := range lengthPrefixed.Payload {
