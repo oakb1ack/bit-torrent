@@ -1,16 +1,21 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha1"
+	"flag"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
+	"path/filepath"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/oakb1ack/bit-torrent/internal/bencode"
 	"github.com/oakb1ack/bit-torrent/internal/download"
@@ -19,18 +24,38 @@ import (
 )
 
 func main() {
-	if err := run(os.Args[1:], os.Stdout); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	if err := runContext(ctx, os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
 func run(args []string, out io.Writer) error {
-	if len(args) != 1 {
-		return fmt.Errorf("usage: bit-torrent <torrent file or URL>")
+	return runContext(context.Background(), args, out)
+}
+
+func runContext(ctx context.Context, args []string, out io.Writer) error {
+	flags := flag.NewFlagSet("bit-torrent", flag.ContinueOnError)
+	flags.SetOutput(out)
+	inspect := flags.Bool("inspect", false, "report peer availability without downloading")
+	directory := flags.String("o", ".", "download directory")
+	timeout := flags.Duration("timeout", 30*time.Second, "maximum time without useful peer data")
+	if err := flags.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return nil
+		}
+		return err
+	}
+	if flags.NArg() != 1 {
+		return fmt.Errorf("usage: bit-torrent [-inspect] [-o directory] [-timeout 30s] <torrent file or URL>")
+	}
+	if *timeout <= 0 {
+		return fmt.Errorf("timeout must be positive")
 	}
 
-	torrentBytes, err := readTorrent(args[0])
+	torrentBytes, err := readTorrentContext(ctx, flags.Arg(0))
 	if err != nil {
 		return fmt.Errorf("read torrent: %w", err)
 	}
@@ -72,6 +97,16 @@ func run(args []string, out io.Writer) error {
 		return fmt.Errorf("initialize pieces: %w", err)
 	}
 	_, pieceCount := scheduler.Progress()
+	var layout download.Layout
+	if !*inspect {
+		layout, err = torrentLayout(info, fileSize, pieceLength)
+		if err != nil {
+			return err
+		}
+		if scheduler.Done() {
+			return saveDownload(ctx, scheduler, nil, *directory, layout, *timeout, out)
+		}
+	}
 
 	infoHash := sha1.Sum(rawInfo)
 	var peerID [20]byte
@@ -80,7 +115,7 @@ func run(args []string, out io.Writer) error {
 		return fmt.Errorf("generate peer ID: %w", err)
 	}
 
-	peers, err := tracker.ShowPeers(announce, tracker.Parameters{
+	peers, err := tracker.ShowPeersContext(ctx, announce, tracker.Parameters{
 		InfoHash:   infoHash,
 		PeerID:     peerID,
 		Port:       6881,
@@ -99,7 +134,7 @@ func run(args []string, out io.Writer) error {
 	if _, err := fmt.Fprintf(out, "Got %d peers\n", len(peers)); err != nil {
 		return err
 	}
-	results := connectPeers(peers, infoHash, peerID, pieceCount)
+	results := connectPeersContext(ctx, peers, infoHash, peerID, pieceCount)
 	defer func() {
 		for _, result := range results {
 			if result.connection != nil {
@@ -107,7 +142,11 @@ func run(args []string, out io.Writer) error {
 			}
 		}
 	}()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	connected := 0
+	var connections []*peer.Connection
 	for i, result := range results {
 		if _, err := fmt.Fprintf(out, "Peer %d is ip: %s port: %d\n", i+1, peers[i].IP, peers[i].Port); err != nil {
 			return err
@@ -119,6 +158,10 @@ func run(args []string, out io.Writer) error {
 			continue
 		}
 		connected++
+		connections = append(connections, result.connection)
+		if !*inspect {
+			continue
+		}
 		hasPieces := false
 		for index := 0; index < pieceCount; index++ {
 			if result.connection.HasPiece(index) {
@@ -137,10 +180,78 @@ func run(args []string, out io.Writer) error {
 	if _, err := fmt.Fprintf(out, "Connected to %d of %d peers\n", connected, len(peers)); err != nil {
 		return err
 	}
-	if len(peers) != 0 && connected == 0 {
+	if (len(peers) != 0 || !*inspect) && connected == 0 {
 		return fmt.Errorf("could not connect to any tracker peers")
 	}
+	if !*inspect {
+		return saveDownload(ctx, scheduler, connections, *directory, layout, *timeout, out)
+	}
 	return nil
+}
+
+func saveDownload(ctx context.Context, scheduler *download.Scheduler, connections []*peer.Connection, directory string, layout download.Layout, timeout time.Duration, out io.Writer) error {
+	store, err := download.NewStore(directory, layout)
+	if err != nil {
+		return fmt.Errorf("create output: %w", err)
+	}
+	defer store.Close()
+	err = download.Run(ctx, scheduler, connections, store.WritePiece, download.Options{Timeout: timeout, OnPiece: func(piece download.Piece) error {
+		completed, total := scheduler.Progress()
+		_, err := fmt.Fprintf(out, "Downloaded and verified piece %d (%d/%d)\n", piece.Index, completed, total)
+		return err
+	}})
+	if err != nil {
+		return err
+	}
+	if err := store.Finish(); err != nil {
+		return fmt.Errorf("finish output: %w", err)
+	}
+	_, err = fmt.Fprintf(out, "Saved %s\n", filepath.Join(directory, layout.Name))
+	return err
+}
+
+func torrentLayout(info map[string]any, totalLength int64, pieceLength int) (download.Layout, error) {
+	name, ok := info["name"].(string)
+	if !ok {
+		return download.Layout{}, fmt.Errorf("torrent must contain a filename")
+	}
+	layout := download.Layout{Name: name, Length: totalLength, PieceLength: pieceLength}
+	_, single := info["length"]
+	rawFiles, multiple := info["files"]
+	if single == multiple {
+		return layout, fmt.Errorf("torrent must specify exactly one of length or files")
+	}
+	if multiple {
+		entries, ok := rawFiles.([]any)
+		if !ok {
+			return layout, fmt.Errorf("invalid files list")
+		}
+		layout.Files = make([]download.File, 0, len(entries))
+		for _, entry := range entries {
+			file, ok := entry.(map[string]any)
+			if !ok {
+				return layout, fmt.Errorf("invalid file entry")
+			}
+			length, ok := file["length"].(int)
+			if !ok || length < 0 {
+				return layout, fmt.Errorf("invalid file length")
+			}
+			parts, ok := file["path"].([]any)
+			if !ok {
+				return layout, fmt.Errorf("invalid file path")
+			}
+			path := make([]string, len(parts))
+			for i, part := range parts {
+				text, ok := part.(string)
+				if !ok {
+					return layout, fmt.Errorf("invalid file path component")
+				}
+				path[i] = text
+			}
+			layout.Files = append(layout.Files, download.File{Path: path, Length: int64(length)})
+		}
+	}
+	return layout, layout.Validate()
 }
 
 const maxConcurrentPeers = 32
@@ -154,6 +265,10 @@ type peerResult struct {
 // connectPeers retains successful connections and their bitfields in tracker
 // order. The caller owns the returned connections and must close them.
 func connectPeers(peers []tracker.Peer, infoHash, peerID [20]byte, pieceCount int) []peerResult {
+	return connectPeersContext(context.Background(), peers, infoHash, peerID, pieceCount)
+}
+
+func connectPeersContext(ctx context.Context, peers []tracker.Peer, infoHash, peerID [20]byte, pieceCount int) []peerResult {
 	results := make([]peerResult, len(peers))
 	jobs := make(chan int)
 	completed := make(chan peerResult)
@@ -162,7 +277,7 @@ func connectPeers(peers []tracker.Peer, infoHash, peerID [20]byte, pieceCount in
 		workers.Go(func() {
 			for index := range jobs {
 				address := net.JoinHostPort(peers[index].IP.String(), strconv.Itoa(int(peers[index].Port)))
-				connection, err := peer.Connect(address, infoHash, peerID, pieceCount)
+				connection, err := peer.ConnectContext(ctx, address, infoHash, peerID, pieceCount)
 				completed <- peerResult{index: index, connection: connection, err: err}
 			}
 		})
@@ -182,6 +297,10 @@ func connectPeers(peers []tracker.Peer, infoHash, peerID [20]byte, pieceCount in
 }
 
 func readTorrent(source string) ([]byte, error) {
+	return readTorrentContext(context.Background(), source)
+}
+
+func readTorrentContext(ctx context.Context, source string) ([]byte, error) {
 	parsed, err := url.Parse(source)
 	if err != nil {
 		return nil, err
@@ -190,7 +309,12 @@ func readTorrent(source string) ([]byte, error) {
 		return os.ReadFile(source)
 	}
 
-	resp, err := http.Get(source)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
+	if err != nil {
+		return nil, err
+	}
+	client := http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

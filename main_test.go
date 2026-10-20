@@ -83,7 +83,7 @@ func TestRunConnectsPeersConcurrently(t *testing.T) {
 		trackerIDs <- id
 	})
 	var out bytes.Buffer
-	if err := run([]string{writeTestTorrent(t, announce, info)}, &out); err != nil {
+	if err := runInspection([]string{writeTestTorrent(t, announce, info)}, &out); err != nil {
 		t.Fatal(err)
 	}
 	output := out.String()
@@ -119,7 +119,7 @@ func TestRunRejectsInvalidPieces(t *testing.T) {
 		t.Run(fmt.Sprintf("pieces_%q", pieces), func(t *testing.T) {
 			info := "d6:lengthi9e4:name4:test12:piece lengthi1e" + pieces + "e"
 			path := writeTestTorrent(t, "http://127.0.0.1:1/announce", info)
-			if err := run([]string{path}, io.Discard); err == nil || !strings.Contains(err.Error(), "pieces") {
+			if err := runInspection([]string{path}, io.Discard); err == nil || !strings.Contains(err.Error(), "pieces") {
 				t.Fatalf("run error = %v; want pieces validation error", err)
 			}
 		})
@@ -141,7 +141,7 @@ func TestRunRejectsInvalidPieceMetadataBeforeContactingTracker(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			path := writeTestTorrent(t, "http://127.0.0.1:1/announce", tt.info)
-			err := run([]string{path}, io.Discard)
+			err := runInspection([]string{path}, io.Discard)
 			if err == nil || !strings.Contains(err.Error(), "piece") || strings.Contains(err.Error(), "contact tracker") {
 				t.Fatalf("run error = %v; want metadata error before networking", err)
 			}
@@ -152,7 +152,7 @@ func TestRunRejectsInvalidPieceMetadataBeforeContactingTracker(t *testing.T) {
 func TestRunWithNoTrackerPeers(t *testing.T) {
 	announce := testTracker(t, nil, nil)
 	var out bytes.Buffer
-	if err := run([]string{writeTestTorrent(t, announce, testInfo("180:"+strings.Repeat("x", 180)))}, &out); err != nil {
+	if err := runInspection([]string{writeTestTorrent(t, announce, testInfo("180:"+strings.Repeat("x", 180)))}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "Got 0 peers\nConnected to 0 of 0 peers\n") {
@@ -174,7 +174,7 @@ func TestRunWhenAllPeersFail(t *testing.T) {
 	})
 	announce := testTracker(t, []tracker.Peer{remote}, nil)
 	var out bytes.Buffer
-	err := run([]string{writeTestTorrent(t, announce, info)}, &out)
+	err := runInspection([]string{writeTestTorrent(t, announce, info)}, &out)
 	if err == nil || !strings.Contains(err.Error(), "could not connect to any tracker peers") {
 		t.Fatalf("run error = %v; want all-peers-failed error", err)
 	}
@@ -199,7 +199,7 @@ func TestRunClosesConnectionsOnOutputFailure(t *testing.T) {
 		return waitForClientClose(conn)
 	})
 	announce := testTracker(t, []tracker.Peer{remote}, nil)
-	err := run([]string{writeTestTorrent(t, announce, info)}, failPeerOutput{})
+	err := runInspection([]string{writeTestTorrent(t, announce, info)}, failPeerOutput{})
 	if !errors.Is(err, io.ErrClosedPipe) {
 		t.Fatalf("run error = %v; want output error", err)
 	}
@@ -222,7 +222,7 @@ func TestRunPeerWithoutBitfield(t *testing.T) {
 	})
 	announce := testTracker(t, []tracker.Peer{remote}, nil)
 	var out bytes.Buffer
-	if err := run([]string{writeTestTorrent(t, announce, info)}, &out); err != nil {
+	if err := runInspection([]string{writeTestTorrent(t, announce, info)}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "No pieces available\nConnected to 1 of 1 peers\n") {
@@ -338,4 +338,8 @@ func startMainTestPeer(t *testing.T, serve func(net.Conn) error) tracker.Peer {
 	})
 	address := listener.Addr().(*net.TCPAddr)
 	return tracker.Peer{IP: address.IP, Port: uint16(address.Port)}
+}
+
+func runInspection(args []string, out io.Writer) error {
+	return run(append([]string{"-inspect"}, args...), out)
 }
