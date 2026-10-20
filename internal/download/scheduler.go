@@ -22,6 +22,7 @@ type Scheduler struct {
 	states    []pieceState
 	next      int
 	completed int
+	changed   chan struct{}
 }
 
 func NewScheduler(totalLength int64, pieceLength int, hashes string) (*Scheduler, error) {
@@ -32,7 +33,8 @@ func NewScheduler(totalLength int64, pieceLength int, hashes string) (*Scheduler
 	return &Scheduler{
 		pieces: pieces,
 		// pending is zero, so every piece starts pending.
-		states: make([]pieceState, len(pieces)),
+		states:  make([]pieceState, len(pieces)),
+		changed: make(chan struct{}),
 	}, nil
 }
 
@@ -86,7 +88,29 @@ func (s *Scheduler) finish(index int, state pieceState) error {
 	if state == complete {
 		s.completed++
 	}
+	close(s.changed)
+	s.changed = make(chan struct{})
 	return nil
+}
+
+// Changes returns a notification channel that closes when work is retried or
+// completed. Take this snapshot before Next so a change cannot be missed between
+// discovering no work and waiting. Notifications wake all waiting workers.
+func (s *Scheduler) Changes() <-chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.changed
+}
+
+func (s *Scheduler) hasAssigned() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, state := range s.states {
+		if state == assigned {
+			return true
+		}
+	}
+	return false
 }
 
 // Progress returns completed and total piece counts in a consistent snapshot.
