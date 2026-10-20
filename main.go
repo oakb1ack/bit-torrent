@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/oakb1ack/bit-torrent/internal/bencode"
+	"github.com/oakb1ack/bit-torrent/internal/download"
 	"github.com/oakb1ack/bit-torrent/internal/peer"
 	"github.com/oakb1ack/bit-torrent/internal/tracker"
 )
@@ -62,7 +63,15 @@ func run(args []string, out io.Writer) error {
 	if !ok || len(pieces)%sha1.Size != 0 {
 		return fmt.Errorf("info dictionary must contain pieces with a length divisible by %d", sha1.Size)
 	}
-	pieceCount := len(pieces) / sha1.Size
+	pieceLength, ok := info["piece length"].(int)
+	if !ok {
+		return fmt.Errorf("info dictionary must contain an integer piece length")
+	}
+	scheduler, err := download.NewScheduler(fileSize, pieceLength, pieces)
+	if err != nil {
+		return fmt.Errorf("initialize pieces: %w", err)
+	}
+	_, pieceCount := scheduler.Progress()
 
 	infoHash := sha1.Sum(rawInfo)
 	var peerID [20]byte

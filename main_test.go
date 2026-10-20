@@ -126,6 +126,29 @@ func TestRunRejectsInvalidPieces(t *testing.T) {
 	}
 }
 
+func TestRunRejectsInvalidPieceMetadataBeforeContactingTracker(t *testing.T) {
+	valid := testInfo("180:" + strings.Repeat("x", 180))
+	tests := []struct {
+		name string
+		info string
+	}{
+		{"missing piece length", strings.Replace(valid, "12:piece lengthi1e", "", 1)},
+		{"noninteger piece length", strings.Replace(valid, "12:piece lengthi1e", "12:piece length1:x", 1)},
+		{"zero piece length", strings.Replace(valid, "12:piece lengthi1e", "12:piece lengthi0e", 1)},
+		{"negative piece length", strings.Replace(valid, "12:piece lengthi1e", "12:piece lengthi-1e", 1)},
+		{"inconsistent hash count", testInfo("20:" + strings.Repeat("x", 20))},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeTestTorrent(t, "http://127.0.0.1:1/announce", tt.info)
+			err := run([]string{path}, io.Discard)
+			if err == nil || !strings.Contains(err.Error(), "piece") || strings.Contains(err.Error(), "contact tracker") {
+				t.Fatalf("run error = %v; want metadata error before networking", err)
+			}
+		})
+	}
+}
+
 func TestRunWithNoTrackerPeers(t *testing.T) {
 	announce := testTracker(t, nil, nil)
 	var out bytes.Buffer
