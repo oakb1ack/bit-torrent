@@ -1,6 +1,7 @@
 package peer
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -32,15 +33,32 @@ func Connect(address string, infoHash [20]byte, peerId [20]byte, pieceCount int)
 	return connect(address, infoHash, peerId, pieceCount, connectionTimeout)
 }
 
+// ConnectContext permits cancellation while dialing or exchanging initial data.
+func ConnectContext(ctx context.Context, address string, infoHash, peerID [20]byte, pieceCount int) (*Connection, error) {
+	return connectContext(ctx, address, infoHash, peerID, pieceCount, connectionTimeout)
+}
+
 func connect(address string, infoHash, peerID [20]byte, pieceCount int, timeout time.Duration) (*Connection, error) {
+	return connectContext(context.Background(), address, infoHash, peerID, pieceCount, timeout)
+}
+
+func connectContext(ctx context.Context, address string, infoHash, peerID [20]byte, pieceCount int, timeout time.Duration) (*Connection, error) {
 	if _, err := bitfieldSize(pieceCount); err != nil {
 		return nil, err
 	}
-	conn, err := net.DialTimeout("tcp", address, timeout)
+	dialer := net.Dialer{Timeout: timeout}
+	conn, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
 		return nil, fmt.Errorf("connect to %s: %w", address, err)
 	}
-	return initialize(conn, infoHash, peerID, pieceCount, timeout)
+	stop := context.AfterFunc(ctx, func() { conn.Close() })
+	defer stop()
+	p, err := initialize(conn, infoHash, peerID, pieceCount, timeout)
+	if ctx.Err() != nil {
+		conn.Close()
+		return nil, ctx.Err()
+	}
+	return p, err
 }
 
 func initialize(conn net.Conn, infoHash, peerID [20]byte, pieceCount int, timeout time.Duration) (_ *Connection, err error) {

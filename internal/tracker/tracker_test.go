@@ -1,6 +1,8 @@
 package tracker
 
 import (
+	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -9,6 +11,16 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestRequestPeersContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { cancel(); <-r.Context().Done() }))
+	defer server.Close()
+	if _, err := RequestPeersContext(ctx, server.URL, Parameters{}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("request error = %v", err)
+	}
+}
 
 func TestRequestPeersBuildsGETRequest(t *testing.T) {
 	var infoHash [20]byte

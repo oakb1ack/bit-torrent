@@ -2,6 +2,7 @@ package peer
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -11,6 +12,22 @@ import (
 	"testing"
 	"time"
 )
+
+func TestConnectContextCancelsHandshake(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	address := startTestPeer(t, func(conn net.Conn) error {
+		if err := expectHandshake(conn); err != nil {
+			return err
+		}
+		cancel()
+		return expectClosed(conn)
+	})
+	p, err := ConnectContext(ctx, address, testInfoHash, testLocalID, 9)
+	if p != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("ConnectContext = %v, %v", p, err)
+	}
+}
 
 var (
 	testInfoHash = [20]byte{1, 2, 3, 4}

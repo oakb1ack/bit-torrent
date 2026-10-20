@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -18,6 +19,10 @@ type Parameters struct {
 }
 
 func RequestPeers(link string, params Parameters) (*http.Response, error) {
+	return RequestPeersContext(context.Background(), link, params)
+}
+
+func RequestPeersContext(ctx context.Context, link string, params Parameters) (*http.Response, error) {
 	u, err := url.Parse(link)
 	if err != nil {
 		return nil, err
@@ -35,7 +40,7 @@ func RequestPeers(link string, params Parameters) (*http.Response, error) {
 
 	u.RawQuery = query.Encode()
 
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -16,7 +17,11 @@ type Peer struct {
 }
 
 func ShowPeers(link string, params Parameters) ([]Peer, error) {
-	resp, err := RequestPeers(link, params)
+	return ShowPeersContext(context.Background(), link, params)
+}
+
+func ShowPeersContext(ctx context.Context, link string, params Parameters) ([]Peer, error) {
+	resp, err := RequestPeersContext(ctx, link, params)
 	if err != nil {
 		return nil, err
 	}
