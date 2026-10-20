@@ -5,11 +5,15 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
+	"sync"
 
 	"github.com/oakb1ack/bit-torrent/internal/bencode"
+	"github.com/oakb1ack/bit-torrent/internal/peer"
 	"github.com/oakb1ack/bit-torrent/internal/tracker"
 )
 
@@ -54,6 +58,11 @@ func run(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	pieces, ok := info["pieces"].(string)
+	if !ok || len(pieces)%sha1.Size != 0 {
+		return fmt.Errorf("info dictionary must contain pieces with a length divisible by %d", sha1.Size)
+	}
+	pieceCount := len(pieces) / sha1.Size
 
 	infoHash := sha1.Sum(rawInfo)
 	var peerID [20]byte
@@ -81,12 +90,86 @@ func run(args []string, out io.Writer) error {
 	if _, err := fmt.Fprintf(out, "Got %d peers\n", len(peers)); err != nil {
 		return err
 	}
-	for i, peer := range peers {
-		if _, err := fmt.Fprintf(out, "Peer %d is ip: %s port: %d\n", i, peer.IP, peer.Port); err != nil {
+	results := connectPeers(peers, infoHash, peerID, pieceCount)
+	defer func() {
+		for _, result := range results {
+			if result.connection != nil {
+				result.connection.Conn.Close()
+			}
+		}
+	}()
+	connected := 0
+	for i, result := range results {
+		if _, err := fmt.Fprintf(out, "Peer %d is ip: %s port: %d\n", i+1, peers[i].IP, peers[i].Port); err != nil {
 			return err
 		}
+		if result.err != nil {
+			if _, err := fmt.Fprintf(out, "Connection failed: %v\n", result.err); err != nil {
+				return err
+			}
+			continue
+		}
+		connected++
+		hasPieces := false
+		for index := 0; index < pieceCount; index++ {
+			if result.connection.HasPiece(index) {
+				hasPieces = true
+				if _, err := fmt.Fprintf(out, "Has piece %d\n", index); err != nil {
+					return err
+				}
+			}
+		}
+		if !hasPieces {
+			if _, err := fmt.Fprintln(out, "No pieces available"); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := fmt.Fprintf(out, "Connected to %d of %d peers\n", connected, len(peers)); err != nil {
+		return err
+	}
+	if len(peers) != 0 && connected == 0 {
+		return fmt.Errorf("could not connect to any tracker peers")
 	}
 	return nil
+}
+
+const maxConcurrentPeers = 32
+
+type peerResult struct {
+	index      int
+	connection *peer.Connection
+	err        error
+}
+
+// connectPeers retains successful connections and their bitfields in tracker
+// order. The caller owns the returned connections and must close them.
+func connectPeers(peers []tracker.Peer, infoHash, peerID [20]byte, pieceCount int) []peerResult {
+	results := make([]peerResult, len(peers))
+	jobs := make(chan int)
+	completed := make(chan peerResult)
+	var workers sync.WaitGroup
+	for range min(maxConcurrentPeers, len(peers)) {
+		workers.Go(func() {
+			for index := range jobs {
+				address := net.JoinHostPort(peers[index].IP.String(), strconv.Itoa(int(peers[index].Port)))
+				connection, err := peer.Connect(address, infoHash, peerID, pieceCount)
+				completed <- peerResult{index: index, connection: connection, err: err}
+			}
+		})
+	}
+	go func() {
+		for index := range peers {
+			jobs <- index
+		}
+		close(jobs)
+		workers.Wait()
+		close(completed)
+	}()
+	for result := range completed {
+		results[result.index] = result
+	}
+	return results
 }
 
 func readTorrent(source string) ([]byte, error) {
