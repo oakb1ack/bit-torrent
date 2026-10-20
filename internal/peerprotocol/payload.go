@@ -35,11 +35,11 @@ func EncodeInterested() ([]byte, error) {
 }
 
 func DecodeInterested(message []byte) error {
-	return decodeEmptyMessage(message, uninterestedMessageID)
+	return decodeEmptyMessage(message, interestedMessageID)
 }
 
 func EncodeUninterested() ([]byte, error) {
-	return encodeEmptyMessage(interestedMessageID)
+	return encodeEmptyMessage(uninterestedMessageID)
 }
 
 func DecodeUninterested(message []byte) error {
