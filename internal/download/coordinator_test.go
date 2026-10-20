@@ -140,6 +140,24 @@ func TestCoordinatorCancellationStopsBlockedPeer(t *testing.T) {
 	}
 }
 
+func TestCoordinatorStopsOnProgressOutputError(t *testing.T) {
+	data := []byte("data")
+	hash := sha1.Sum(data)
+	s, _ := NewScheduler(4, 4, string(hash[:]))
+	p := coordinatorPeer(t, []byte{0x80}, 1, serveOnePiece(data))
+	err := Run(context.Background(), s, []*peer.Connection{p}, func(Piece, []byte) error { return nil }, Options{Timeout: time.Second, OnPiece: func(Piece) error { return io.ErrClosedPipe }})
+	if !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestCoordinatorRejectsMissingPeers(t *testing.T) {
+	s := newTestScheduler(t, 1)
+	if err := Run(context.Background(), s, nil, func(Piece, []byte) error { return nil }, Options{}); err == nil {
+		t.Fatal("accepted incomplete download with no peers")
+	}
+}
+
 func serveOnePiece(data []byte) func(net.Conn) error {
 	return func(conn net.Conn) error {
 		if err := expectInterested(conn); err != nil {

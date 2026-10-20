@@ -122,6 +122,68 @@ func TestWorkerReissuesRequestsAfterChoke(t *testing.T) {
 	}
 }
 
+func TestWorkerRefillsRequestPipeline(t *testing.T) {
+	data := bytes.Repeat([]byte{'p'}, 10*blockSize+123)
+	p := coordinatorPeer(t, []byte{0x80}, 1, func(conn net.Conn) error {
+		if err := expectInterested(conn); err != nil {
+			return err
+		}
+		if err := writeTestFrame(conn, []byte{0, 0, 0, 1, 1}); err != nil {
+			return err
+		}
+		for _, batchSize := range []int{requestPipeline, 3} {
+			requests := make([]peerprotocol.BlockRequest, batchSize)
+			for i := range requests {
+				frame, err := readTestFrame(conn)
+				if err != nil {
+					return err
+				}
+				requests[i], err = peerprotocol.DecodeRequest(frame)
+				if err != nil {
+					return err
+				}
+			}
+			for i := len(requests) - 1; i >= 0; i-- {
+				r := requests[i]
+				frame, _ := peerprotocol.EncodePiece(peerprotocol.Piece{Index: r.Index, Begin: r.Begin, Block: data[int(r.Begin):int(r.Begin+r.Length)]})
+				if err := writeTestFrame(conn, frame); err != nil {
+					return err
+				}
+			}
+		}
+		return waitDownloadClose(conn)
+	})
+	w, err := newWorker(context.Background(), p, 1, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.close()
+	got, err := w.downloadPiece(Piece{Length: len(data), Hash: sha1.Sum(data)})
+	if err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("pipeline download = %d bytes, %v", len(got), err)
+	}
+}
+
+func TestKeepAlivesDoNotPreventStallTimeout(t *testing.T) {
+	w := testWorker(t, func(conn net.Conn) error {
+		if err := expectInterested(conn); err != nil {
+			return err
+		}
+		ticker := time.NewTicker(5 * time.Millisecond)
+		defer ticker.Stop()
+		for range ticker.C {
+			if _, err := conn.Write([]byte{0, 0, 0, 0}); err != nil {
+				return nil
+			}
+		}
+		return nil
+	})
+	w.timeout = 50 * time.Millisecond
+	if _, err := w.downloadPiece(Piece{Length: 1}); err == nil || !strings.Contains(err.Error(), "timeout") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestWorkerTimeoutAndCancellation(t *testing.T) {
 	for _, cancelled := range []bool{false, true} {
 		t.Run(fmt.Sprint(cancelled), func(t *testing.T) {
